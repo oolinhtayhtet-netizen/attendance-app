@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Field Service - Attendance Check-in</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .container { background: #ffffff; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 450px; }
+        h2 { color: #1a73e8; text-align: center; margin-bottom: 20px; }
+        .alert { background: #fce8e6; color: #c5221f; padding: 12px; border-radius: 6px; font-size: 13px; margin-bottom: 20px; line-height: 1.5; }
+        .form-group { margin-bottom: 18px; }
+        label { display: block; margin-bottom: 6px; font-weight: 600; color: #333; font-size: 14px; }
+        select, input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+        .btn-cam { background: #137333; color: white; border: none; width: 100%; padding: 12px; border-radius: 6px; font-size: 15px; cursor: pointer; font-weight: bold; margin-top: 5px; }
+        .btn-submit { background: #f9ab00; color: #202124; border: none; width: 100%; padding: 12px; border-radius: 6px; font-size: 16px; cursor: pointer; font-weight: bold; margin-top: 15px; }
+        .btn-submit:hover { background: #f29900; }
+        video, canvas { width: 100%; max-height: 250px; border-radius: 6px; margin-top: 10px; display: none; background: #000; }
+        #status { text-align: center; margin-top: 15px; font-weight: bold; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Attendance Check-in</h2>
+        <div class="alert">
+            <strong>သတိပေးချက်:</strong> Check-in ပြုလုပ်ရာတွင် ယူနီဖောင်း/လည်ဆွဲကတ်နှင့် ဓာတ်ပုံရိုက်ပြီး ဓါတ်ပုံရိုက်ချိန်တွင် တိုက်ရိုက်ရိုက်ကူးရန်။
+        </div>
+        
+        <div class="form-group">
+            <label>Role (ရာထူး):</label>
+            <select id="role">
+                <option value="">-- ရာထူးရွေးပါ --</option>
+                <option value="Technician">Technician</option>
+                <option value="Supervisor">Supervisor</option>
+                <option value="Engineer">Engineer</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Employee Name (ဝန်ထမ်းအမည်):</label>
+            <input type="text" id="empName" placeholder="နာမည်ထည့်ပါ">
+        </div>
+
+        <div class="form-group">
+            <label>Live Photo (ယူနီဖောင်း/လည်ဆွဲကတ်နှင့် ဓာတ်ပုံရိုက်ရန်):</label>
+            <button type="button" class="btn-cam" onclick="startCamera()">ကင်မရာဖွင့်မည်</button>
+            <video id="video" autoplay playsinline></video>
+            <button type="button" id="snapBtn" class="btn-cam" style="background: #d93025; display:none;" onclick="takeSnapshot()">ဓာတ်ပုံရိုက်မည်</button>
+            <canvas id="canvas"></canvas>
+            <input type="hidden" id="photoData">
+        </div>
+
+        <button type="button" class="btn-submit" onclick="submitData()">ချက်ချင်း Check-in လုပ်မည်</button>
+        <div id="status"></div>
+    </div>
+
+    <script>
+        // Apps Script Web App URL အသစ်ကို အောက်ပါ နေရာတွင် ထည့်ပေးရန်
+        const SCRIPT_URL = "YOUR_APPS_SCRIPT_WEB_APP_URL";
+
+        let videoStream = null;
+
+        function startCamera() {
+            const video = document.getElementById('video');
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+                .then(stream => {
+                    videoStream = stream;
+                    video.srcObject = stream;
+                    video.style.display = 'block';
+                    document.getElementById('snapBtn').style.display = 'block';
+                })
+                .catch(err => alert("ကင်မရာ ဖွင့်၍မရပါ: " + err));
+        }
+
+        function takeSnapshot() {
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            document.getElementById('photoData').value = canvas.toDataURL('image/jpeg');
+            
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+            }
+            video.style.display = 'none';
+            document.getElementById('snapBtn').style.display = 'none';
+            alert("ဓာတ်ပုံ ရိုက်ယူပြီးပါပြီ!");
+        }
+
+        function submitData() {
+            const role = document.getElementById('role').value;
+            const name = document.getElementById('empName').value;
+            const photoData = document.getElementById('photoData').value;
+            const statusDiv = document.getElementById('status');
+
+            if (!role || !name || !photoData) {
+                alert("ကျေးဇူးပြု၍ ရာထူး၊ နာမည်နှင့် ဓာတ်ပုံ အပြည့်အစုံ ဖြည့်စွက်ပါ။");
+                return;
+            }
+
+            statusDiv.innerHTML = "GPS တည်နေရာ ရယူနေပါသည်...";
+            
+            navigator.geolocation.getCurrentPosition(position => {
+                const gps = `${position.coords.latitude}, ${position.coords.longitude}`;
+                statusDiv.innerHTML = "ဒေတာများ ပို့ဆောင်နေပါသည်...";
+
+                const payload = { role, name, photoData, gps };
+
+                fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                .then(() => {
+                    statusDiv.style.color = "green";
+                    statusDiv.innerHTML = "အောင်မြင်ပါသည်! Check-in တင်ပြီးပါပြီ။";
+                    setTimeout(() => location.reload(), 2000);
+                })
+                .catch(err => {
+                    statusDiv.style.color = "red";
+                    statusDiv.innerHTML = "အမှားအယွင်း: " + err.message;
+                });
+            }, err => {
+                statusDiv.style.color = "red";
+                statusDiv.innerHTML = "GPS ရယူ၍ မရပါ: " + err.message;
+            }, { enableHighAccuracy: true });
+        }
+    </script>
+</body>
+</html>
